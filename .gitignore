@@ -1,0 +1,67 @@
+# === Java ===
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+*.rar
+
+# === Maven ===
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+
+# Wrapper
+.mvn/wrapper/maven-wrapper.jar
+!/.mvn/wrapper/maven-wrapper.properties
+
+# === IDE Files ===
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VSCode
+.vscode/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# === OS Files ===
+.DS_Store
+Thumbs.db
+
+# === Logs ===
+*.log
+logs/
+log/
+
+# === Configuration (local overrides) ===
+server.properties
+
+# === Docker ===
+docker-build/
+*.tmp
+
+# === Python tests ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.python-version
+.env
+venv/
+.venv/
+
+# === Misc ===
+*.swp
+*.swo
