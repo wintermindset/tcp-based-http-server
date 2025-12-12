@@ -1,5 +1,8 @@
 package com.wintermindset.factory;
 
-public class HandlerFactory {
-    
+import java.net.Socket;
+
+@FunctionalInterface
+public interface HandlerFactory {
+    Runnable create(Socket client);
 }
