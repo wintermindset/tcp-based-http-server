@@ -88,6 +88,10 @@ public final class BufferedInput {
         scanPos = 0;
     }
 
+    public void close() throws IOException {
+        in.close();
+    }
+
     public static final class ByteSlice {
         public final byte[] data;
         public final int offset;

@@ -54,6 +54,10 @@ public final class BufferedOutput {
         out.flush();
     }
 
+    public void close() throws IOException {
+        out.close();
+    }
+
     private void flushInternal() throws IOException {
         if (position > 0) {
             out.write(buffer, 0, position);
