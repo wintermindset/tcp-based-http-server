@@ -30,7 +30,7 @@ A lightweight HTTP server built on raw TCP, using Java virtual threads for scala
 
 ``` yaml
 port: 8080
-handler: net.server.calc.CalcHandler
+handler: com.wintermindset.handler.CalcHandler
 ```
 
 
