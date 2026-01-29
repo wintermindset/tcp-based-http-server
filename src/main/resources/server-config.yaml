@@ -1,2 +1,2 @@
 port: 8080
-handler: net.server.calc.CalcHandler
+handler: com.wintermindset.handler.CalcHandler
