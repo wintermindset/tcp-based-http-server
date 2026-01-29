@@ -69,9 +69,9 @@ Response:
 ``` bash
 HTTP/1.1 200 OK
 Content-Type: text/plain
-Content-Length: 2
+Content-Length: 4
 
-12
+12.0
 ```
 
 
