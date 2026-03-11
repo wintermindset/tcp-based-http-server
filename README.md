@@ -39,19 +39,19 @@ handler: com.wintermindset.handler.CalcHandler
 1. Build:
 
 ``` bash
-mvn clean package
+./mvnw clean package
 ```
 
 2. Run (using builded config):
 
 ``` bash
-java -jar target/loom-http-server-1.0.0.jar
+java -jar target/tcp-based-http-server-1.0.0.jar
 ```
 
 3. Run (using external config):
 
 ``` bash
-java -jar target/loom-http-server-1.0.0.jar /path/to/config.yaml
+java -jar target/tcp-based-http-server-1.0.0.jar /path/to/config.yaml
 ```
 
 
@@ -93,7 +93,7 @@ Handlers are instantiated at startup via reflection using the class name provide
 Run all tests:
 
 ``` bash
-mvn test
+./mvnw test
 ```
 
 Integration tests start the server and perform real TCP/HTTP requests.
