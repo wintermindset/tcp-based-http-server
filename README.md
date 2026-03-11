@@ -19,7 +19,7 @@ A lightweight HTTP server built on raw TCP, using Java virtual threads for scala
 
 ## Requirements
 
-- Java 25
+- Java 21
 - Maven 3.9+ (optional)
 - Docker (optional)
 
