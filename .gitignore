@@ -28,3 +28,6 @@ target/
 
 # VS Code
 .vscode/
+
+# Prod server config
+src/main/resources/server-config-prod.yaml
