@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.wintermindset</groupId>
   <artifactId>tcp-based-http-server</artifactId>
-  <version>0.0.0</version>
+  <version>1.0.0</version>
   <name>tcp-based-http-server</name>
   <description>A lightweight HTTP server built on raw TCP, using Java virtual threads for scalable concurrency.</description>
   <url>https://github.com/wintermindset/tcp-based-http-server</url>
