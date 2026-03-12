@@ -25,6 +25,7 @@ replay_pid*
 
 # Maven
 target/
+dependency-reduced-pom.xml
 
 # VS Code
 .vscode/
