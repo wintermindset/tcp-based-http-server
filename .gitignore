@@ -25,6 +25,10 @@ replay_pid*
 
 # Maven
 target/
+dependency-reduced-pom.xml
 
 # VS Code
 .vscode/
+
+# Prod server config
+src/main/resources/server-config-prod.yaml
