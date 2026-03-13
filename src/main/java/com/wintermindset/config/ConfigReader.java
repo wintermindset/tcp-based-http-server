@@ -58,7 +58,6 @@ public final class ConfigReader {
         }
     }
 
-
     /**
      * Parses the configuration content from a reader.
      *
