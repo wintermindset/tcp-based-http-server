@@ -6,7 +6,12 @@ import com.wintermindset.http.HttpResponse;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 public final class CalcHandler implements Handler {
+
+    private static final Logger LOGGER = LogManager.getLogger();
 
     public HttpResponse handle(HttpRequest req) {
         if (!"GET".equals(req.method)) {
@@ -30,8 +35,10 @@ public final class CalcHandler implements Handler {
                 }
                 default -> throw new IllegalArgumentException("Unknown op");
             };
+            LOGGER.trace("{} {} {} = {}", x, op, y, result);
             return HttpResponse.ok(Double.toString(result));
         } catch (Exception e) {
+            LOGGER.error(e);
             return HttpResponse.badRequest("Invalid parameters");
         }
     }
