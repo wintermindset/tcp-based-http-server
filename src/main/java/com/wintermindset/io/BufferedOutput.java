@@ -1,8 +1,10 @@
 package com.wintermindset.io;
 
 import java.io.IOException;
+import java.io.Closeable;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 /**
  * Buffered writer optimized for HTTP response serialization.
@@ -24,13 +26,14 @@ import java.nio.charset.StandardCharsets;
  * out.flush();
  * </pre>
  */
-public final class BufferedOutput {
+public final class BufferedOutput implements Closeable {
 
     private static final int DEFAULT_BUFFER_SIZE = 8 * 1024;
 
     private final OutputStream out;
     private final byte[] buffer;
     private int position = 0;
+    private boolean closed;
 
     /**
      * Creates a buffered output wrapper with the default buffer size.
@@ -48,7 +51,10 @@ public final class BufferedOutput {
      * @param bufferSize size of the internal buffer
      */
     public BufferedOutput(OutputStream out, int bufferSize) {
-        this.out = out;
+        if (bufferSize <= 0) {
+            throw new IllegalArgumentException("Buffer size must be positive");
+        }
+        this.out = Objects.requireNonNull(out);
         this.buffer = new byte[bufferSize];
     }
 
@@ -74,6 +80,8 @@ public final class BufferedOutput {
      * @throws IOException if writing fails
      */
     public void write(byte[] data, int off, int len) throws IOException {
+        ensureOpen();
+        Objects.checkFromIndexSize(off, len, data.length);
         int offset = off;
         while (len > 0) {
             int space = buffer.length - position;
@@ -116,6 +124,7 @@ public final class BufferedOutput {
      * @throws IOException if flushing fails
      */
     public void flush() throws IOException {
+        ensureOpen();
         flushInternal();
         out.flush();
     }
@@ -126,7 +135,19 @@ public final class BufferedOutput {
      * @throws IOException if closing fails
      */
     public void close() throws IOException {
-        out.close();
+        if (!closed) {
+            try (out) {
+                flush();
+            } finally {
+                closed = true;
+            }
+        }
+    }
+
+    private void ensureOpen() throws IOException {
+        if (closed) {
+            throw new IOException("Output is closed");
+        }
     }
 
     /**
