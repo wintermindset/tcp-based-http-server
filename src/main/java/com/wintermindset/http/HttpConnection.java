@@ -73,7 +73,7 @@ public final class HttpConnection implements Runnable {
         var deadline = deadlines.schedule(() -> {
             metrics.timeouts.increment();
             LOGGER.warn("Request deadline exceeded: {}", requestId);
-            try { socket.close(); } catch (IOException ignored) { }
+            try { socket.close(); } catch (IOException e) { LOGGER.debug("Deadline socket close failed", e); }
             worker.interrupt();
         }, config.requestTimeoutMillis, TimeUnit.MILLISECONDS);
         int status = 0;
