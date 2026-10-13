@@ -73,6 +73,10 @@ public final class HttpConnection implements Runnable {
                 HttpRequest req;
                 try {
                     req = parser.parse(in);
+                    if (req == null) break;
+                } catch (HttpException e) {
+                    new HttpResponse().status(e.status(), e.getMessage()).body(e.getMessage()).writeTo(out, false);
+                    break;
                 } catch (Exception e) {
                     HttpResponse.badRequest("Bad Request")
                             .writeTo(out, false);

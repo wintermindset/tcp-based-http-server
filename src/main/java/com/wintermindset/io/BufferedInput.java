@@ -108,6 +108,17 @@ public final class BufferedInput implements Closeable {
         return slice.toStringAscii();
     }
 
+    public boolean hasData() throws IOException {
+        ensureOpen();
+        if (position < limit) return true;
+        try {
+            fill();
+            return true;
+        } catch (EOFException e) {
+            return false;
+        }
+    }
+
     /**
      * Reads a fixed-length HTTP body.
      *
