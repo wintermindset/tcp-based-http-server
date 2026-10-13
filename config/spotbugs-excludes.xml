@@ -18,8 +18,11 @@
   </Match>
   <!-- The request body is an API input for user-supplied handlers. -->
   <Match>
-    <Class name="com.wintermindset.http.HttpRequestParser"/>
-    <Field class="com.wintermindset.http.HttpRequest" name="body"/>
+    <Or>
+      <Class name="com.wintermindset.http.HttpRequest"/>
+      <Class name="com.wintermindset.http.HttpRequestParser"/>
+    </Or>
+    <Field name="body"/>
     <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD"/>
   </Match>
 </FindBugsFilter>

@@ -68,6 +68,9 @@ public final class CalcHandler implements Handler {
         }
         try {
             Map<String, String> params = parseQuery(req.path);
+            if (!params.keySet().containsAll(java.util.Set.of("x", "y", "op"))) {
+                throw new IllegalArgumentException("Missing calculator parameter");
+            }
             double x = Double.parseDouble(params.get("x"));
             double y = Double.parseDouble(params.get("y"));
             if (!Double.isFinite(x) || !Double.isFinite(y)) throw new IllegalArgumentException("Non-finite operand");
@@ -85,7 +88,7 @@ public final class CalcHandler implements Handler {
             if (!Double.isFinite(result)) throw new IllegalArgumentException("Non-finite result");
             LOGGER.trace("{} {} {} = {}", x, op, y, result);
             return HttpResponse.ok(Double.toString(result));
-        } catch (IllegalArgumentException | ArithmeticException | NullPointerException e) {
+        } catch (IllegalArgumentException | ArithmeticException e) {
             LOGGER.debug("Invalid calculator parameters");
             return HttpResponse.badRequest("Invalid parameters");
         }
