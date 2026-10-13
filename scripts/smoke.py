@@ -58,9 +58,21 @@ def jar_smoke(jar):
 
 def container_smoke(image):
     name = "tcp-http-smoke"
-    subprocess.run(["docker", "run", "--detach", "--name", name, "-p", "127.0.0.1:18080:8080", image], check=True)
+    subprocess.run(["docker", "run", "--detach", "--name", name,
+                    "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+                    "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                    "--memory", "512m", "--pids-limit", "256", "--cpus", "2",
+                    "-p", "127.0.0.1:18080:8080", image], check=True)
     try:
         check_http("http://127.0.0.1:18080")
+        deadline = time.monotonic() + 45
+        while True:
+            container = json.loads(subprocess.check_output(["docker", "inspect", name]))[0]
+            assert container["Config"]["User"] == "10001:10001"
+            if container["State"]["Health"]["Status"] == "healthy":
+                break
+            assert time.monotonic() < deadline, container["State"]
+            time.sleep(1)
         subprocess.run(["docker", "stop", "--time", "10", name], check=True, timeout=15)
         state = json.loads(subprocess.check_output(["docker", "inspect", name]))[0]["State"]
         assert not state["Running"] and state["ExitCode"] != 137, state
