@@ -1,55 +1,40 @@
 package com.wintermindset;
 
-import java.io.IOException;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 import com.wintermindset.config.ConfigReader;
 import com.wintermindset.config.ServerConfig;
 import com.wintermindset.core.Server;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
-/**
- * Application entry point.
- *
- * <p>This class is responsible for bootstrapping the HTTP server.
- * It performs the following steps:</p>
- *
- * <ol>
- *     <li>Load server configuration from resources</li>
- *     <li>Create the {@link Server} instance</li>
- *     <li>Start the server</li>
- * </ol>
- *
- * <p>The configuration file is expected to be located in the application
- * resources and defines settings such as the server port and the request
- * handler implementation.</p>
- */
-public class App {
+import java.io.IOException;
+import java.nio.file.Path;
 
+public final class App {
     private static final Logger LOGGER = LogManager.getLogger(App.class);
 
-    /**
-     * Main application entry point.
-     *
-     * <p>The method loads the server configuration, initializes the server,
-     * and starts accepting HTTP connections.</p>
-     *
-     * @param args command-line arguments (not used)
-     */
     public static void main(String[] args) {
+        System.exit(run(args));
+    }
+
+    static int run(String[] args) {
         try {
-            LOGGER.info("Loading server config");
-            ServerConfig config = ConfigReader.loadFromResources("server-config.yaml");
-            LOGGER.info("Config is loaded");
-            LOGGER.info("Creating server");
-            Server server = new Server(config);
-            Runtime.getRuntime().addShutdownHook(new Thread(server::close, "http-shutdown"));
-            LOGGER.info("Server is created");
-            LOGGER.info("Starting server");
-            server.start();
-        } catch (IOException e) {
-            LOGGER.error(e);
+            if (args.length > 1) throw new IllegalArgumentException("Usage: java -jar app.jar [config-file]");
+            String path = args.length == 1 ? args[0] : System.getenv("SERVER_CONFIG");
+            ServerConfig config = path == null || path.isBlank()
+                    ? ConfigReader.loadFromResources("server-config.yaml") : ConfigReader.load(Path.of(path));
+            try (Server server = new Server(config)) {
+                Thread shutdown = new Thread(server::close, "http-shutdown");
+                Runtime.getRuntime().addShutdownHook(shutdown);
+                try {
+                    server.start();
+                } finally {
+                    try { Runtime.getRuntime().removeShutdownHook(shutdown); } catch (IllegalStateException ignored) { }
+                }
+            }
+            return 0;
+        } catch (IOException | RuntimeException e) {
+            LOGGER.error("Server startup or execution failed", e);
+            return 1;
         }
     }
 }
