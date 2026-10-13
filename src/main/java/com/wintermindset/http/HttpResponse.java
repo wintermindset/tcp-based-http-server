@@ -2,8 +2,13 @@ package com.wintermindset.http;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
 
 import com.wintermindset.io.BufferedOutput;
 
@@ -29,7 +34,9 @@ public final class HttpResponse {
     private int status = 200;
     private String reason = "OK";
     private byte[] body = new byte[0];
-    private final Map<String, String> headers = new LinkedHashMap<>();
+    private final Map<String, String> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+    private static final DateTimeFormatter HTTP_DATE = DateTimeFormatter
+            .ofPattern("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US).withZone(ZoneOffset.UTC);
 
     /**
      * Creates a new HTTP response with a default {@code Server} header.
@@ -46,6 +53,9 @@ public final class HttpResponse {
      * @return current response instance
      */
     public HttpResponse status(int status, String reason) {
+        if (status < 100 || status > 599 || !HttpSyntax.fieldValue(Objects.requireNonNull(reason))) {
+            throw new IllegalArgumentException("Invalid HTTP status");
+        }
         this.status = status;
         this.reason = reason;
         return this;
@@ -73,7 +83,7 @@ public final class HttpResponse {
      * @return current response instance
      */
     public HttpResponse body(byte[] body) {
-        this.body = body;
+        this.body = Objects.requireNonNull(body).clone();
         return this;
     }
 
@@ -85,6 +95,12 @@ public final class HttpResponse {
      * @return current response instance
      */
     public HttpResponse header(String name, String value) {
+        if (!HttpSyntax.token(Objects.requireNonNull(name)) || !HttpSyntax.fieldValue(Objects.requireNonNull(value))) {
+            throw new IllegalArgumentException("Invalid HTTP header");
+        }
+        if (name.equalsIgnoreCase("Transfer-Encoding") || name.equalsIgnoreCase("Trailer")) {
+            throw new IllegalArgumentException("Response transfer coding is not supported");
+        }
         headers.put(name, value);
         return this;
     }
@@ -111,13 +127,35 @@ public final class HttpResponse {
      * @throws IOException if writing fails
      */
     public void writeTo(BufferedOutput out, boolean keepAlive) throws IOException {
-        out.writeAscii("HTTP/1.1 ");
+        writeTo(out, keepAlive, null);
+    }
+
+    public int status() {
+        return status;
+    }
+
+    public boolean allowsKeepAlive() {
+        for (String token : headers.getOrDefault("Connection", "").split(",")) {
+            if (token.trim().equalsIgnoreCase("close")) return false;
+        }
+        return true;
+    }
+
+    public void writeTo(BufferedOutput out, boolean keepAlive, HttpRequest request) throws IOException {
+        boolean bodyForbidden = status < 200 || status == 204 || status == 205 || status == 304;
+        boolean head = request != null && "HEAD".equals(request.method);
+        if (status < 200 || status == 204 || status == 304) {
+            headers.remove("Content-Length");
+        } else {
+            header("Content-Length", Integer.toString(status == 205 ? 0 : body.length));
+        }
+        header("Connection", keepAlive && allowsKeepAlive() ? "keep-alive" : "close");
+        headers.putIfAbsent("Date", HTTP_DATE.format(Instant.now()));
+        out.writeAscii(request != null && "HTTP/1.0".equals(request.version) ? "HTTP/1.0 " : "HTTP/1.1 ");
         out.writeAscii(Integer.toString(status));
         out.writeAscii(" ");
         out.writeAscii(reason);
         out.writeCRLF();
-        header("Content-Length", Integer.toString(body.length));
-        header("Connection", keepAlive ? "keep-alive" : "close");
         for (var entry : headers.entrySet()) {
             out.writeAscii(entry.getKey());
             out.writeAscii(": ");
@@ -125,7 +163,7 @@ public final class HttpResponse {
             out.writeCRLF();
         }
         out.writeCRLF();
-        if (body.length > 0) {
+        if (!bodyForbidden && !head && body.length > 0) {
             out.write(body);
         }
         out.flush();

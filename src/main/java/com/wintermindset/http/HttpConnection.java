@@ -84,12 +84,12 @@ public final class HttpConnection implements Runnable {
                 }
                 HttpResponse resp;
                 try {
-                    resp = handler.handle(req);
+                    resp = java.util.Objects.requireNonNull(handler.handle(req), "Handler returned null");
                 } catch (Exception e) {
                     resp = HttpResponse.internalError("Internal Error");
                 }
-                keepAlive = req.keepAlive();
-                resp.writeTo(out, keepAlive);
+                keepAlive = req.keepAlive() && resp.allowsKeepAlive();
+                resp.writeTo(out, keepAlive, req);
                 if (!keepAlive) {
                     break;
                 }
