@@ -53,9 +53,11 @@ public final class HttpRequest {
      */
     public boolean keepAlive() {
         String connection = headers.getOrDefault("connection", "");
-        if ("HTTP/1.1".equals(version)) {
-            return !"close".equalsIgnoreCase(connection);
+        boolean persistent = "HTTP/1.1".equals(version);
+        for (String token : connection.split(",")) {
+            if ("close".equalsIgnoreCase(token.trim())) return false;
+            if ("keep-alive".equalsIgnoreCase(token.trim())) persistent = true;
         }
-        return "keep-alive".equalsIgnoreCase(connection);
+        return persistent;
     }
 }
