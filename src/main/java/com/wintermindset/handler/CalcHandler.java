@@ -36,7 +36,7 @@ import org.apache.logging.log4j.Logger;
  * <p>Example request:</p>
  *
  * <pre>
- * GET /calc?x=10&y=5&op=+
+ * GET /calc?x=10&y=5&op=%2B
  * </pre>
  *
  * <p>Response:</p>
@@ -103,7 +103,7 @@ public final class CalcHandler implements Handler {
      * <p>Example:</p>
      *
      * <pre>
-     * /calc?x=10&y=5&op=+
+     * /calc?x=10&y=5&op=%2B
      * </pre>
      *
      * becomes:
