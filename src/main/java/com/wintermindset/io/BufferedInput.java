@@ -213,10 +213,10 @@ public final class BufferedInput implements Closeable {
     }
 
     /**
-     * Lightweight immutable view over a portion of a byte array.
+     * View over the mutable input buffer, valid only until the next read.
      *
      * <p>This class avoids copying data by referencing the original buffer
-     * along with an offset and length.</p>
+     * along with an offset and length. Copy the bytes if they must be retained.</p>
      */
     public static final class ByteSlice {
         public final byte[] data;
