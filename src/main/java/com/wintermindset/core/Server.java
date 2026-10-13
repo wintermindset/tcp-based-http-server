@@ -7,6 +7,7 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.time.Duration;
@@ -35,8 +36,8 @@ public final class Server implements AutoCloseable {
     private ScheduledThreadPoolExecutor deadlines;
 
     public Server(ServerConfig config) {
-        config.validateLimits();
-        this.config = config;
+        config.validate();
+        this.config = config.copy();
         this.capacity = new Semaphore(config.maxConnections);
     }
 
@@ -45,7 +46,8 @@ public final class Server implements AutoCloseable {
             synchronized (lifecycle) {
                 if (startCalled || closing.get()) throw new IllegalStateException("Server cannot be restarted");
                 startCalled = true;
-                listener = new ServerSocket(config.port);
+                listener = new ServerSocket();
+                listener.bind(new InetSocketAddress(config.bindAddress, config.port));
                 executor = Executors.newVirtualThreadPerTaskExecutor();
                 deadlines = new ScheduledThreadPoolExecutor(1, Thread.ofPlatform().daemon().name("http-deadlines").factory());
                 deadlines.setRemoveOnCancelPolicy(true);

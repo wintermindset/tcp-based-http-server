@@ -1,2 +1,12 @@
 port: 8080
 handler: com.wintermindset.handler.CalcHandler
+bindAddress: 0.0.0.0
+maxConnections: 64
+maxRequestsPerConnection: 100
+idleTimeoutMillis: 15000
+readTimeoutMillis: 5000
+requestTimeoutMillis: 30000
+shutdownTimeoutMillis: 5000
+maxHeaders: 100
+maxHeaderBytes: 32768
+maxBodyBytes: 1048576

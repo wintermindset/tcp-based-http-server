@@ -62,7 +62,7 @@ public final class HttpConnection implements Runnable {
         this.socket = socket;
         this.handler = handler;
         config.validateLimits();
-        this.config = config;
+        this.config = config.copy();
         this.deadlines = deadlines;
         this.accepting = accepting;
         this.parser = new HttpRequestParser(config.maxHeaders, config.maxHeaderBytes, config.maxBodyBytes);

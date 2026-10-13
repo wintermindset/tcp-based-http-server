@@ -7,11 +7,50 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.io.StringReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConfigReaderTest {
+    @TempDir
+    Path directory;
+
+    @Test
+    void loadsExternalConfigAndAllLimits() throws Exception {
+        Path path = directory.resolve("server.yaml");
+        Files.writeString(path, "port: 9091\nbindAddress: 127.0.0.1\nhandler: com.wintermindset.handler.CalcHandler\n"
+                + "maxConnections: 4\nmaxRequestsPerConnection: 5\nidleTimeoutMillis: 100\nreadTimeoutMillis: 200\n"
+                + "requestTimeoutMillis: 300\nshutdownTimeoutMillis: 400\nmaxHeaders: 6\nmaxHeaderBytes: 500\nmaxBodyBytes: 600\n");
+        ServerConfig cfg = ConfigReader.load(path);
+        assertEquals(9091, cfg.port);
+        assertEquals("127.0.0.1", cfg.bindAddress);
+        assertEquals(4, cfg.maxConnections);
+        assertEquals(5, cfg.maxRequestsPerConnection);
+        assertEquals(100, cfg.idleTimeoutMillis);
+        assertEquals(200, cfg.readTimeoutMillis);
+        assertEquals(300, cfg.requestTimeoutMillis);
+        assertEquals(400, cfg.shutdownTimeoutMillis);
+        assertEquals(6, cfg.maxHeaders);
+        assertEquals(500, cfg.maxHeaderBytes);
+        assertEquals(600, cfg.maxBodyBytes);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"unknown: value", "port: 1\nport: 2", "port: -1", "port: 65536",
+            "port:", "broken", "maxConnections: 0", "readTimeoutMillis: 0", "maxBodyBytes: 10485761"})
+    void rejectsUnknownDuplicateAndInvalidSettings(String setting) {
+        assertThrows(IllegalArgumentException.class, () -> ConfigReader.parse(new StringReader(
+                "handler: com.wintermindset.handler.CalcHandler\n" + setting)));
+    }
+
+    @Test
+    void rejectsMissingHandler() {
+        assertThrows(IllegalArgumentException.class, () -> ConfigReader.parse(new StringReader("port: 8080")));
+    }
     @Test
     void loadsBundledConfig() {
         ServerConfig config = ConfigReader.loadFromResources("server-config.yaml");
