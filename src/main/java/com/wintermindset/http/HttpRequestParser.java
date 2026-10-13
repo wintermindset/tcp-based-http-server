@@ -12,10 +12,23 @@ import java.util.Map;
 import java.util.Set;
 
 public final class HttpRequestParser {
-    private static final int MAX_HEADERS = 100;
-    private static final int MAX_HEADER_BYTES = 32 * 1024;
-    private static final int MAX_BODY_BYTES = 10 * 1024 * 1024;
+    private final int maxHeaders;
+    private final int maxHeaderBytes;
+    private final int maxBodyBytes;
     private static final Set<String> SINGLE_HEADERS = Set.of("host", "content-length", "transfer-encoding");
+
+    public HttpRequestParser() {
+        this(100, 32768, 10 * 1024 * 1024);
+    }
+
+    public HttpRequestParser(int maxHeaders, int maxHeaderBytes, int maxBodyBytes) {
+        if (maxHeaders <= 0 || maxHeaderBytes <= 0 || maxBodyBytes < 0 || maxBodyBytes > 10 * 1024 * 1024) {
+            throw new IllegalArgumentException("Invalid parser limits");
+        }
+        this.maxHeaders = maxHeaders;
+        this.maxHeaderBytes = maxHeaderBytes;
+        this.maxBodyBytes = maxBodyBytes;
+    }
 
     public HttpRequest parse(BufferedInput in) throws IOException {
         if (!in.hasData()) return null;
@@ -78,15 +91,15 @@ public final class HttpRequestParser {
         }
     }
 
-    private static void readHeaders(BufferedInput in, Map<String, String> headers) throws IOException {
+    private void readHeaders(BufferedInput in, Map<String, String> headers) throws IOException {
         int count = 0;
         int bytes = 0;
         while (true) {
             String line = line(in);
             bytes += line.length() + 2;
-            if (bytes > MAX_HEADER_BYTES) throw new HttpException(431, "Request Header Fields Too Large");
+            if (bytes > maxHeaderBytes) throw new HttpException(431, "Request Header Fields Too Large");
             if (line.isEmpty()) return;
-            if (++count > MAX_HEADERS) throw new HttpException(431, "Request Header Fields Too Large");
+            if (++count > maxHeaders) throw new HttpException(431, "Request Header Fields Too Large");
             int colon = line.indexOf(':');
             if (colon <= 0 || !HttpSyntax.token(line.substring(0, colon))
                     || !HttpSyntax.fieldValue(line.substring(colon + 1))) throw badRequest();
@@ -97,7 +110,7 @@ public final class HttpRequestParser {
         }
     }
 
-    private static int bodyLength(String value, int radix) throws HttpException {
+    private int bodyLength(String value, int radix) throws HttpException {
         if (value.isEmpty() || !value.chars().allMatch(c ->
                 c >= '0' && c <= '9' || radix == 16 && (c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'))) {
             throw badRequest();
@@ -105,18 +118,18 @@ public final class HttpRequestParser {
         long size = 0;
         for (int i = 0; i < value.length(); i++) {
             size = size * radix + Character.digit(value.charAt(i), radix);
-            if (size > MAX_BODY_BYTES) throw new HttpException(413, "Content Too Large");
+            if (size > maxBodyBytes) throw new HttpException(413, "Content Too Large");
         }
         return (int) size;
     }
 
-    private static byte[] chunks(BufferedInput in) throws IOException {
+    private byte[] chunks(BufferedInput in) throws IOException {
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         int metadataBytes = 0;
         while (true) {
             String line = line(in);
             metadataBytes += line.length() + 2;
-            if (metadataBytes > MAX_HEADER_BYTES) throw new HttpException(413, "Content Too Large");
+            if (metadataBytes > maxHeaderBytes) throw new HttpException(413, "Content Too Large");
             int semicolon = line.indexOf(';');
             if (semicolon >= 0) validateExtensions(line.substring(semicolon));
             int size = bodyLength(semicolon < 0 ? line : line.substring(0, semicolon).stripTrailing(), 16);
@@ -129,7 +142,7 @@ public final class HttpRequestParser {
                 }
                 return body.toByteArray();
             }
-            if (size > MAX_BODY_BYTES - body.size()) throw new HttpException(413, "Content Too Large");
+            if (size > maxBodyBytes - body.size()) throw new HttpException(413, "Content Too Large");
             body.writeBytes(in.readBody(size));
             byte[] crlf = in.readBody(2);
             if (crlf[0] != '\r' || crlf[1] != '\n') throw badRequest();

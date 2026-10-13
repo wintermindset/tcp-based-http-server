@@ -5,6 +5,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.Semaphore;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -39,6 +41,7 @@ public final class Server {
 
     private final int port;
     private final Handler handler;
+    private final ServerConfig config;
     private static final Logger LOGGER = LogManager.getLogger(Server.class);
 
     /**
@@ -47,6 +50,8 @@ public final class Server {
      * @param config server configuration containing port and handler
      */
     public Server(ServerConfig config) {
+        config.validateLimits();
+        this.config = config;
         this.port = config.port;
         this.handler = config.handler;
     }
@@ -62,14 +67,33 @@ public final class Server {
      */
     public void start() throws IOException {
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        ScheduledThreadPoolExecutor deadlines = new ScheduledThreadPoolExecutor(1,
+                Thread.ofPlatform().daemon().name("http-deadlines").factory());
+        deadlines.setRemoveOnCancelPolicy(true);
+        Semaphore capacity = new Semaphore(config.maxConnections);
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             LOGGER.info("Server started on port {}", port);
             while (true) {
                 Socket socket = serverSocket.accept();
-                LOGGER.info("Client {} is accepted", socket);
-                socket.setTcpNoDelay(true);
-                executor.submit(new HttpConnection(socket, handler));
+                if (!capacity.tryAcquire()) {
+                    socket.close();
+                    continue;
+                }
+                try {
+                    socket.setTcpNoDelay(true);
+                    HttpConnection connection = new HttpConnection(socket, handler, config, deadlines);
+                    executor.submit(() -> {
+                        try { connection.run(); } finally { capacity.release(); }
+                    });
+                } catch (IOException | RuntimeException e) {
+                    capacity.release();
+                    socket.close();
+                    LOGGER.warn("Connection setup failed", e);
+                }
             }
+        } finally {
+            executor.shutdownNow();
+            deadlines.shutdownNow();
         }
     }
 }
