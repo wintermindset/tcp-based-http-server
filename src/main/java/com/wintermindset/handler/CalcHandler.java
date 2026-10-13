@@ -5,6 +5,8 @@ import com.wintermindset.http.HttpResponse;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -58,16 +60,17 @@ public final class CalcHandler implements Handler {
      * @return HTTP response containing the calculation result
      */
     public HttpResponse handle(HttpRequest req) {
-        if (!"GET".equals(req.method)) {
-            return HttpResponse.badRequest("Only GET supported");
-        }
-        if (!req.path.startsWith("/calc")) {
+        if (!req.path.split("\\?", 2)[0].equals("/calc")) {
             return HttpResponse.notFound();
         }
-        Map<String, String> params = parseQuery(req.path);
+        if (!"GET".equals(req.method) && !"HEAD".equals(req.method)) {
+            return new HttpResponse().status(405, "Method Not Allowed").header("Allow", "GET, HEAD").body("Only GET and HEAD supported");
+        }
         try {
+            Map<String, String> params = parseQuery(req.path);
             double x = Double.parseDouble(params.get("x"));
             double y = Double.parseDouble(params.get("y"));
+            if (!Double.isFinite(x) || !Double.isFinite(y)) throw new IllegalArgumentException("Non-finite operand");
             String op = params.get("op");
             double result = switch (op) {
                 case "+" -> x + y;
@@ -79,6 +82,7 @@ public final class CalcHandler implements Handler {
                 }
                 default -> throw new IllegalArgumentException("Unknown op");
             };
+            if (!Double.isFinite(result)) throw new IllegalArgumentException("Non-finite result");
             LOGGER.trace("{} {} {} = {}", x, op, y, result);
             return HttpResponse.ok(Double.toString(result));
         } catch (Exception e) {
@@ -120,7 +124,9 @@ public final class CalcHandler implements Handler {
         for (String p : pairs) {
             int eq = p.indexOf('=');
             if (eq > 0) {
-                map.put(p.substring(0, eq), p.substring(eq + 1));
+                String name = URLDecoder.decode(p.substring(0, eq), StandardCharsets.UTF_8);
+                String value = URLDecoder.decode(p.substring(eq + 1), StandardCharsets.UTF_8);
+                if (map.putIfAbsent(name, value) != null) throw new IllegalArgumentException("Duplicate parameter");
             }
         }
         return map;
