@@ -110,8 +110,16 @@ docker build -t tcp-based-http-server .
 Run container:
 
 ``` bash
-docker run -p 8080:8080 tcp-based-http-server
+docker run --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  --cap-drop ALL --security-opt no-new-privileges \
+  --memory 512m --pids-limit 256 --cpus 2 --stop-timeout 10 \
+  -p 127.0.0.1:8080:8080 tcp-based-http-server
 ```
+
+Terminate TLS at a trusted reverse proxy and restrict access to the application
+port. The server itself accepts plaintext HTTP. The management listener stays on
+container loopback port 9090; do not publish it. The container health check uses
+`/readyz`; override its port if you change `managementPort`.
 
 
 ## License
