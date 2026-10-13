@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+  <!-- Mutable configuration is validated and copied before server use. -->
+  <Match>
+    <Class name="com.wintermindset.config.ServerConfig"/>
+    <Bug pattern="PA_PUBLIC_PRIMITIVE_ATTRIBUTE"/>
+  </Match>
+  <!-- Wrappers deliberately share the socket/stream they manage and close. -->
+  <Match>
+    <Class name="com.wintermindset.http.HttpConnection"/>
+    <Field name="socket"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="com.wintermindset.io.BufferedOutput"/>
+    <Field name="out"/>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+  <!-- The request body is an API input for user-supplied handlers. -->
+  <Match>
+    <Class name="com.wintermindset.http.HttpRequestParser"/>
+    <Field class="com.wintermindset.http.HttpRequest" name="body"/>
+    <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD"/>
+  </Match>
+</FindBugsFilter>

@@ -85,7 +85,7 @@ public final class CalcHandler implements Handler {
             if (!Double.isFinite(result)) throw new IllegalArgumentException("Non-finite result");
             LOGGER.trace("{} {} {} = {}", x, op, y, result);
             return HttpResponse.ok(Double.toString(result));
-        } catch (Exception e) {
+        } catch (IllegalArgumentException | ArithmeticException | NullPointerException e) {
             LOGGER.debug("Invalid calculator parameters");
             return HttpResponse.badRequest("Invalid parameters");
         }
