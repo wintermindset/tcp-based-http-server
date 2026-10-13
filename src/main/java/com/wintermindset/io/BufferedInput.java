@@ -1,8 +1,12 @@
 package com.wintermindset.io;
 
 import java.io.IOException;
+import java.io.Closeable;
+import java.io.EOFException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Objects;
 
 /**
  * Buffered reader optimized for HTTP protocol parsing.
@@ -23,14 +27,15 @@ import java.nio.charset.StandardCharsets;
  *     <li>Size limits for headers and bodies to prevent abuse</li>
  * </ul>
  */
-public final class BufferedInput {
+public final class BufferedInput implements Closeable {
 
     private static final int DEFAULT_BUFFER_SIZE = 8 * 1024;
     private static final int MAX_HEADER_SIZE = 8 * 1024;
     private static final int MAX_BODY_SIZE = 10 * 1024 * 1024;
 
     private final InputStream in;
-    private final byte[] buffer;
+    private byte[] buffer;
+    private boolean closed;
     private int position = 0;
     private int limit = 0;
     private int scanPos = 0;
@@ -51,7 +56,10 @@ public final class BufferedInput {
      * @param bufferSize buffer size in bytes
      */
     public BufferedInput(InputStream in, int bufferSize) {
-        this.in = in;
+        if (bufferSize <= 0) {
+            throw new IllegalArgumentException("Buffer size must be positive");
+        }
+        this.in = Objects.requireNonNull(in);
         this.buffer = new byte[bufferSize];
     }
 
@@ -67,6 +75,7 @@ public final class BufferedInput {
      *                     or the connection is closed
      */
     public ByteSlice readLineSlice() throws IOException {
+        ensureOpen();
         while (true) {
             for (int i = scanPos; i + 1 < limit; i++) {
                 if (buffer[i] == '\r' && buffer[i + 1] == '\n') {
@@ -80,6 +89,10 @@ public final class BufferedInput {
                     return new ByteSlice(buffer, start, length);
                 }
             }
+            if (limit - position >= MAX_HEADER_SIZE + 2) {
+                throw new IOException("Header line too large");
+            }
+            scanPos = Math.max(position, limit - 1);
             fill();
         }
     }
@@ -95,6 +108,17 @@ public final class BufferedInput {
         return slice.toStringAscii();
     }
 
+    public boolean hasData() throws IOException {
+        ensureOpen();
+        if (position < limit) return true;
+        try {
+            fill();
+            return true;
+        } catch (EOFException e) {
+            return false;
+        }
+    }
+
     /**
      * Reads a fixed-length HTTP body.
      *
@@ -104,7 +128,8 @@ public final class BufferedInput {
      *                     or the connection is closed
      */
     public byte[] readBody(int length) throws IOException {
-        if (length > MAX_BODY_SIZE) {
+        ensureOpen();
+        if (length < 0 || length > MAX_BODY_SIZE) {
             throw new IOException("HTTP body too large");
         }
         byte[] body = new byte[length];
@@ -116,6 +141,7 @@ public final class BufferedInput {
             int toCopy = Math.min(length - read, limit - position);
             System.arraycopy(buffer, position, body, read, toCopy);
             position += toCopy;
+            scanPos = position;
             read += toCopy;
         }
         return body;
@@ -131,9 +157,24 @@ public final class BufferedInput {
         if (position > 0) {
             compact();
         }
+        if (limit == buffer.length) {
+            int capacity = (int) Math.min((long) buffer.length * 2, MAX_HEADER_SIZE + 2);
+            if (capacity <= buffer.length) {
+                throw new IOException("Header line too large");
+            }
+            buffer = Arrays.copyOf(buffer, capacity);
+        }
         int read = in.read(buffer, limit, buffer.length - limit);
         if (read == -1) {
-            throw new IOException("Client closed connection");
+            throw new EOFException("Client closed connection");
+        }
+        if (read == 0) {
+            int next = in.read();
+            if (next == -1) {
+                throw new EOFException("Client closed connection");
+            }
+            buffer[limit++] = (byte) next;
+            return;
         }
         limit += read;
         if (limit > MAX_HEADER_SIZE + MAX_BODY_SIZE) {
@@ -148,9 +189,9 @@ public final class BufferedInput {
     private void compact() {
         int remaining = limit - position;
         System.arraycopy(buffer, position, buffer, 0, remaining);
+        scanPos = Math.max(0, scanPos - position);
         position = 0;
         limit = remaining;
-        scanPos = 0;
     }
 
     /**
@@ -159,14 +200,23 @@ public final class BufferedInput {
      * @throws IOException if closing fails
      */
     public void close() throws IOException {
-        in.close();
+        if (!closed) {
+            closed = true;
+            in.close();
+        }
+    }
+
+    private void ensureOpen() throws IOException {
+        if (closed) {
+            throw new IOException("Input is closed");
+        }
     }
 
     /**
-     * Lightweight immutable view over a portion of a byte array.
+     * View over the mutable input buffer, valid only until the next read.
      *
      * <p>This class avoids copying data by referencing the original buffer
-     * along with an offset and length.</p>
+     * along with an offset and length. Copy the bytes if they must be retained.</p>
      */
     public static final class ByteSlice {
         public final byte[] data;

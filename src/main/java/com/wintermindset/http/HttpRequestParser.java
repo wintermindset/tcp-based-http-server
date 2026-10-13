@@ -1,170 +1,195 @@
 package com.wintermindset.http;
 
-import java.io.IOException;
-
 import com.wintermindset.io.BufferedInput;
-import com.wintermindset.io.BufferedInput.ByteSlice;
 
-/**
- * Parser for HTTP/1.1 requests.
- *
- * <p>This class reads raw bytes from {@link BufferedInput} and converts them
- * into a {@link HttpRequest} object. The parser processes:</p>
- *
- * <ul>
- *     <li>request line (method, path, version)</li>
- *     <li>HTTP headers</li>
- *     <li>optional message body</li>
- * </ul>
- *
- * <p>The implementation is intentionally minimal and intended for educational
- * purposes (e.g. implementing a simple HTTP server).</p>
- *
- * <p>Limitations:</p>
- * <ul>
- *     <li>Only supports bodies with <code>Content-Length</code></li>
- *     <li>No chunked encoding support</li>
- *     <li>No validation of HTTP version</li>
- * </ul>
- */
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
 public final class HttpRequestParser {
+    private final int maxHeaders;
+    private final int maxHeaderBytes;
+    private final int maxBodyBytes;
+    private static final Set<String> SINGLE_HEADERS = Set.of("host", "content-length", "transfer-encoding");
 
-    /**
-     * Parses an HTTP request from the given buffered input stream.
-     *
-     * <p>The method reads:</p>
-     * <ol>
-     *     <li>The request line</li>
-     *     <li>All HTTP headers</li>
-     *     <li>The request body (if {@code Content-Length} is present)</li>
-     * </ol>
-     *
-     * @param in buffered input source containing the raw HTTP request
-     * @return parsed {@link HttpRequest}
-     * @throws IOException if the request cannot be read or the request line is empty
-     */
+    public HttpRequestParser() {
+        this(100, 32768, 10 * 1024 * 1024);
+    }
+
+    public HttpRequestParser(int maxHeaders, int maxHeaderBytes, int maxBodyBytes) {
+        if (maxHeaders <= 0 || maxHeaderBytes <= 0 || maxBodyBytes < 0 || maxBodyBytes > 10 * 1024 * 1024) {
+            throw new IllegalArgumentException("Invalid parser limits");
+        }
+        this.maxHeaders = maxHeaders;
+        this.maxHeaderBytes = maxHeaderBytes;
+        this.maxBodyBytes = maxBodyBytes;
+    }
+
     public HttpRequest parse(BufferedInput in) throws IOException {
+        if (!in.hasData()) return null;
         HttpRequest req = new HttpRequest();
-        ByteSlice requestLine = in.readLineSlice();
-        if (requestLine.length == 0) {
-            throw new IOException("Empty request line");
+        String[] parts = line(in).split(" ", -1);
+        if (parts.length != 3 || !HttpSyntax.token(parts[0]) || parts[1].isEmpty()) throw badRequest();
+        req.method = parts[0];
+        req.version = parts[2];
+        if (!req.version.equals("HTTP/1.1") && !req.version.equals("HTTP/1.0")) {
+            throw new HttpException(505, "HTTP Version Not Supported");
         }
-        parseRequestLine(requestLine, req);
-        while (true) {
-            ByteSlice line = in.readLineSlice();
-            if (line.length == 0) {
-                break; // end of headers
-            }
-            parseHeader(line, req);
+        req.path = target(parts[1], req.method);
+        readHeaders(in, req.headers);
+        if (req.version.equals("HTTP/1.1") && !req.headers.containsKey("host")) throw badRequest();
+        if (req.headers.containsKey("host")) validateHost(req.headers.get("host"));
+        if (parts[1].startsWith("http://") || parts[1].startsWith("https://")) {
+            req.headers.put("host", URI.create(parts[1]).getRawAuthority());
         }
-        // Body
-        int contentLength = getContentLength(req);
-        if (contentLength > 0) {
-            req.body = in.readBody(contentLength);
+        if (req.headers.containsKey("expect")) throw new HttpException(417, "Expectation Failed");
+        String transfer = req.headers.get("transfer-encoding");
+        String length = req.headers.get("content-length");
+        if (transfer != null) {
+            if (length != null || !req.version.equals("HTTP/1.1")) throw badRequest();
+            if (!transfer.equalsIgnoreCase("chunked")) throw new HttpException(501, "Not Implemented");
+            req.body = chunks(in);
         } else {
-            req.body = new byte[0];
+            req.body = in.readBody(length == null ? 0 : bodyLength(length, 10));
         }
         return req;
     }
 
-    /**
-     * Parses the HTTP request line.
-     *
-     * <p>Example request line:</p>
-     *
-     * <pre>
-     * GET /index.html HTTP/1.1
-     * </pre>
-     *
-     * @param slice byte slice containing the request line
-     * @param req request object to populate
-     * @throws IllegalArgumentException if the request line format is invalid
-     */
-    private void parseRequestLine(ByteSlice slice, HttpRequest req) {
-        int p1 = indexOf(slice, (byte) ' ');
-        int p2 = indexOf(slice, (byte) ' ', p1 + 1);
-        if (p1 < 0 || p2 < 0) {
-            throw new IllegalArgumentException("Invalid request line");
+    private static String target(String value, String method) throws HttpException {
+        if (value.chars().anyMatch(c -> c <= 32 || c >= 127)) throw badRequest();
+        if (value.equals("*") && method.equals("OPTIONS")) return value;
+        try {
+            URI uri = URI.create(value);
+            if (uri.getRawFragment() != null || uri.getRawUserInfo() != null) throw badRequest();
+            if (value.startsWith("/") && !value.startsWith("//")) return value;
+            if (("http".equals(uri.getScheme()) || "https".equals(uri.getScheme())) && uri.getHost() != null) {
+                validateHost(uri.getRawAuthority());
+                String path = uri.getRawPath().isEmpty() ? "/" : uri.getRawPath();
+                return path + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+            }
+        } catch (IllegalArgumentException e) {
+            throw badRequest();
         }
-        req.method = ascii(slice, 0, p1);
-        req.path = ascii(slice, p1 + 1, p2 - p1 - 1);
-        req.version = ascii(slice, p2 + 1, slice.length - p2 - 1);
+        throw badRequest();
     }
 
-    /**
-     * Parses a single HTTP header line and stores it in the request.
-     *
-     * <p>Example header:</p>
-     *
-     * <pre>
-     * Content-Type: application/json
-     * </pre>
-     *
-     * @param slice byte slice containing the header line
-     * @param req request object to update
-     */
-    private void parseHeader(ByteSlice slice, HttpRequest req) {
-        int colon = indexOf(slice, (byte) ':');
-        if (colon <= 0) {
-            return;
+    private static void validateHost(String host) throws HttpException {
+        try {
+            URI uri = URI.create("http://" + host);
+            if (host.isEmpty() || uri.getHost() == null || uri.getRawUserInfo() != null
+                    || !uri.getRawPath().isEmpty() || uri.getRawQuery() != null
+                    || uri.getRawFragment() != null || uri.getPort() > 65535 || host.endsWith(":")) {
+                throw badRequest();
+            }
+        } catch (IllegalArgumentException e) {
+            throw badRequest();
         }
-        String name = ascii(slice, 0, colon).toLowerCase();
-        String value = ascii(slice, colon + 1, slice.length - colon - 1).trim();
-        req.headers.put(name, value);
     }
 
-    /**
-     * Extracts the {@code Content-Length} header value.
-     *
-     * @param req parsed request
-     * @return body length in bytes, or {@code 0} if the header is not present
-     */
-    private int getContentLength(HttpRequest req) {
-        String v = req.headers.get("content-length");
-        return v == null ? 0 : Integer.parseInt(v);
+    private void readHeaders(BufferedInput in, Map<String, String> headers) throws IOException {
+        int count = 0;
+        int bytes = 0;
+        while (true) {
+            String line = line(in);
+            bytes += line.length() + 2;
+            if (bytes > maxHeaderBytes) throw new HttpException(431, "Request Header Fields Too Large");
+            if (line.isEmpty()) return;
+            if (++count > maxHeaders) throw new HttpException(431, "Request Header Fields Too Large");
+            int colon = line.indexOf(':');
+            if (colon <= 0 || !HttpSyntax.token(line.substring(0, colon))
+                    || !HttpSyntax.fieldValue(line.substring(colon + 1))) throw badRequest();
+            String name = line.substring(0, colon).toLowerCase(Locale.ROOT);
+            String value = line.substring(colon + 1).trim();
+            if (SINGLE_HEADERS.contains(name) && headers.containsKey(name)) throw badRequest();
+            headers.merge(name, value, (a, b) -> a + "," + b);
+        }
     }
 
-    /**
-     * Finds the first occurrence of a byte in the slice.
-     *
-     * @param slice source byte slice
-     * @param b byte to search for
-     * @return index of the byte or {@code -1} if not found
-     */
-    private int indexOf(ByteSlice slice, byte b) {
-        return indexOf(slice, b, 0);
+    private int bodyLength(String value, int radix) throws HttpException {
+        if (value.isEmpty() || !value.chars().allMatch(c ->
+                c >= '0' && c <= '9' || radix == 16 && (c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'))) {
+            throw badRequest();
+        }
+        long size = 0;
+        for (int i = 0; i < value.length(); i++) {
+            size = size * radix + Character.digit(value.charAt(i), radix);
+            if (size > maxBodyBytes) throw new HttpException(413, "Content Too Large");
+        }
+        return (int) size;
     }
 
-    /**
-     * Finds the first occurrence of a byte in the slice starting
-     * from the specified position.
-     *
-     * @param slice source byte slice
-     * @param b byte to search for
-     * @param from starting position
-     * @return index of the byte or {@code -1} if not found
-     */
-    private int indexOf(ByteSlice slice, byte b, int from) {
-        for (int i = from; i < slice.length; i++) {
-            if (slice.data[slice.offset + i] == b) {
-                return i;
+    private byte[] chunks(BufferedInput in) throws IOException {
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        int metadataBytes = 0;
+        while (true) {
+            String line = line(in);
+            metadataBytes += line.length() + 2;
+            if (metadataBytes > maxHeaderBytes) throw new HttpException(413, "Content Too Large");
+            int semicolon = line.indexOf(';');
+            if (semicolon >= 0) validateExtensions(line.substring(semicolon));
+            int size = bodyLength(semicolon < 0 ? line : line.substring(0, semicolon).stripTrailing(), 16);
+            if (size == 0) {
+                Map<String, String> trailers = new HashMap<>();
+                readHeaders(in, trailers);
+                if (trailers.keySet().stream().anyMatch(name -> SINGLE_HEADERS.contains(name)
+                        || Set.of("connection", "expect", "trailer", "authorization", "content-type").contains(name))) {
+                    throw badRequest();
+                }
+                return body.toByteArray();
+            }
+            if (size > maxBodyBytes - body.size()) throw new HttpException(413, "Content Too Large");
+            body.writeBytes(in.readBody(size));
+            byte[] crlf = in.readBody(2);
+            if (crlf[0] != '\r' || crlf[1] != '\n') throw badRequest();
+        }
+    }
+
+    private static void validateExtensions(String value) throws HttpException {
+        int i = 0;
+        while (i < value.length()) {
+            if (value.charAt(i++) != ';') throw badRequest();
+            while (i < value.length() && (value.charAt(i) == ' ' || value.charAt(i) == '\t')) i++;
+            int start = i;
+            while (i < value.length() && HttpSyntax.token(value.substring(i, i + 1))) i++;
+            if (i == start) throw badRequest();
+            while (i < value.length() && (value.charAt(i) == ' ' || value.charAt(i) == '\t')) i++;
+            if (i < value.length() && value.charAt(i) == '=') {
+                i++;
+                while (i < value.length() && (value.charAt(i) == ' ' || value.charAt(i) == '\t')) i++;
+                if (i < value.length() && value.charAt(i) == '"') {
+                    i++;
+                    boolean closed = false;
+                    while (i < value.length()) {
+                        char c = value.charAt(i++);
+                        if (c == '"') { closed = true; break; }
+                        if (c == '\\') {
+                            if (i == value.length()) throw badRequest();
+                            c = value.charAt(i++);
+                        }
+                        if (c != '\t' && (c < 32 || c >= 127)) throw badRequest();
+                    }
+                    if (!closed) throw badRequest();
+                } else {
+                    start = i;
+                    while (i < value.length() && HttpSyntax.token(value.substring(i, i + 1))) i++;
+                    if (i == start) throw badRequest();
+                }
+                while (i < value.length() && (value.charAt(i) == ' ' || value.charAt(i) == '\t')) i++;
             }
         }
-        return -1;
     }
 
-    /**
-     * Converts a region of a byte slice to a {@link String}.
-     *
-     * <p>Used for decoding ASCII parts of the HTTP request such as
-     * method, path, version and header fields.</p>
-     *
-     * @param s source slice
-     * @param off offset inside the slice
-     * @param len number of bytes
-     * @return decoded string
-     */
-    private String ascii(ByteSlice s, int off, int len) {
-        return new String(s.data, s.offset + off, len);
+    private static String line(BufferedInput in) throws IOException {
+        BufferedInput.ByteSlice slice = in.readLineSlice();
+        return new String(slice.data, slice.offset, slice.length, StandardCharsets.ISO_8859_1);
+    }
+
+    private static HttpException badRequest() {
+        return new HttpException(400, "Bad Request");
     }
 }

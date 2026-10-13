@@ -1,105 +1,79 @@
 package com.wintermindset.config;
 
+import com.wintermindset.handler.HandlerFactory;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 
-import com.wintermindset.handler.HandlerFactory;
-
-/**
- * Utility class responsible for loading and parsing server configuration
- * from resource files.
- *
- * <p>The configuration file is expected to be located on the application
- * classpath and follow a simple {@code key: value} format.</p>
- *
- * <p>Example configuration file:</p>
- *
- * <pre>
- * # Server configuration
- * port: 8080
- * handler: com.example.MyHandler
- * </pre>
- *
- * <p>Supported configuration keys:</p>
- * <ul>
- *     <li>{@code port} – server listening port</li>
- *     <li>{@code handler} – fully qualified class name of the request handler</li>
- * </ul>
- *
- * <p>Lines starting with {@code #} and empty lines are ignored.</p>
- */
 public final class ConfigReader {
+    private ConfigReader() {}
 
-    /**
-     * Loads a {@link ServerConfig} instance from a configuration file
-     * located in the application resources.
-     *
-     * @param resourceName resource file name (e.g. {@code server.conf})
-     * @return parsed server configuration
-     *
-     * @throws IllegalArgumentException if the resource cannot be found
-     * @throws RuntimeException if parsing fails
-     */
     public static ServerConfig loadFromResources(String resourceName) {
-        ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        try (InputStream in = cl.getResourceAsStream(resourceName)) {
-            if (in == null) {
-                throw new IllegalArgumentException(
-                        "Config resource not found: " + resourceName
-                );
-            }
-            return parse(new InputStreamReader(in));
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    "Failed to load config from resources: " + resourceName, e
-            );
+        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+        try (InputStream in = loader.getResourceAsStream(resourceName)) {
+            if (in == null) throw new IllegalArgumentException("Config resource not found: " + resourceName);
+            return parse(new InputStreamReader(in, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Cannot read configuration resource: " + resourceName, e);
         }
     }
 
-    /**
-     * Parses the configuration content from a reader.
-     *
-     * <p>The method reads the configuration line by line and applies
-     * recognized keys to the {@link ServerConfig} object.</p>
-     *
-     * @param in input reader
-     * @return parsed configuration
-     * @throws IOException if reading fails
-     */
-    private static ServerConfig parse(InputStreamReader in) throws IOException {
-        ServerConfig cfg = new ServerConfig();
-        try (BufferedReader r = new BufferedReader(in)) {
-            String line;
-            while ((line = r.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-                int colon = line.indexOf(':');
-                if (colon < 0) {
-                    continue;
-                }
-                String key = line.substring(0, colon).trim();
-                String value = line.substring(colon + 1).trim();
-                apply(cfg, key, value);
-            }
+    public static ServerConfig load(Path path) throws IOException {
+        try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            return parse(reader);
         }
-        return cfg;
     }
 
-    /**
-     * Applies a configuration key-value pair to the {@link ServerConfig}.
-     *
-     * @param cfg configuration object
-     * @param key configuration key
-     * @param value configuration value
-     */
-    private static void apply(ServerConfig cfg, String key, String value) {
-        switch (key) {
-            case "port" -> cfg.port = Integer.parseInt(value);
-            case "handler" -> cfg.handler = HandlerFactory.fromClassName(value);
+    public static ServerConfig parse(Reader reader) throws IOException {
+        ServerConfig config = new ServerConfig();
+        Set<String> keys = new HashSet<>();
+        BufferedReader lines = new BufferedReader(reader);
+        String line;
+        int number = 0;
+        while ((line = lines.readLine()) != null) {
+            number++;
+            line = line.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            int colon = line.indexOf(':');
+            if (colon < 1) throw new IllegalArgumentException("Expected key: value on line " + number);
+            String key = line.substring(0, colon).trim();
+            String value = line.substring(colon + 1).trim();
+            if (value.isEmpty() || !keys.add(key)) throw new IllegalArgumentException("Empty or duplicate setting: " + key);
+            try {
+                switch (key) {
+                    case "port" -> config.port = Integer.parseInt(value);
+                    case "bindAddress" -> config.bindAddress = value;
+                    case "managementPort" -> config.managementPort = Integer.parseInt(value);
+                    case "managementBindAddress" -> config.managementBindAddress = value;
+                    case "logRequests" -> {
+                        if (!value.equals("true") && !value.equals("false")) throw new IllegalArgumentException("Expected true or false for logRequests");
+                        config.logRequests = Boolean.parseBoolean(value);
+                    }
+                    case "handler" -> config.handler = HandlerFactory.fromClassName(value);
+                    case "maxConnections" -> config.maxConnections = Integer.parseInt(value);
+                    case "maxRequestsPerConnection" -> config.maxRequestsPerConnection = Integer.parseInt(value);
+                    case "idleTimeoutMillis" -> config.idleTimeoutMillis = Integer.parseInt(value);
+                    case "readTimeoutMillis" -> config.readTimeoutMillis = Integer.parseInt(value);
+                    case "requestTimeoutMillis" -> config.requestTimeoutMillis = Integer.parseInt(value);
+                    case "shutdownTimeoutMillis" -> config.shutdownTimeoutMillis = Integer.parseInt(value);
+                    case "maxHeaders" -> config.maxHeaders = Integer.parseInt(value);
+                    case "maxHeaderBytes" -> config.maxHeaderBytes = Integer.parseInt(value);
+                    case "maxBodyBytes" -> config.maxBodyBytes = Integer.parseInt(value);
+                    default -> throw new IllegalArgumentException("Unknown setting: " + key);
+                }
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Expected an integer for " + key, e);
+            }
         }
+        config.validate();
+        return config;
     }
 }
