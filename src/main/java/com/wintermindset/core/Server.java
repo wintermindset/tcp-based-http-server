@@ -2,6 +2,7 @@ package com.wintermindset.core;
 
 import com.wintermindset.config.ServerConfig;
 import com.wintermindset.http.HttpConnection;
+import com.wintermindset.http.HttpResponse;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -29,6 +30,8 @@ public final class Server implements AutoCloseable {
     private final AtomicBoolean closing = new AtomicBoolean();
     private final Set<Socket> connections = ConcurrentHashMap.newKeySet();
     private final Semaphore capacity;
+    private final ServerMetrics metrics = new ServerMetrics();
+    private Server management;
     private volatile boolean running;
     private boolean startCalled;
     private ServerSocket listener;
@@ -52,6 +55,7 @@ public final class Server implements AutoCloseable {
                 deadlines = new ScheduledThreadPoolExecutor(1, Thread.ofPlatform().daemon().name("http-deadlines").factory());
                 deadlines.setRemoveOnCancelPolicy(true);
                 running = true;
+                startManagement();
                 started.countDown();
                 LOGGER.info("Server started on port {}", listener.getLocalPort());
             }
@@ -71,13 +75,15 @@ public final class Server implements AutoCloseable {
     private void accept(Socket socket) throws IOException {
         synchronized (lifecycle) {
             if (!running || !capacity.tryAcquire()) {
+                metrics.rejected.increment();
                 socket.close();
                 return;
             }
             connections.add(socket);
+            metrics.accepted.increment();
             try {
                 socket.setTcpNoDelay(true);
-                HttpConnection connection = new HttpConnection(socket, config.handler, config, deadlines, this::isRunning);
+                HttpConnection connection = new HttpConnection(socket, config.handler, config, deadlines, this::isRunning, metrics);
                 executor.execute(() -> {
                     try {
                         connection.run();
@@ -114,6 +120,49 @@ public final class Server implements AutoCloseable {
         return connections.size();
     }
 
+    public int managementPort() {
+        synchronized (lifecycle) {
+            return management == null ? -1 : management.port();
+        }
+    }
+
+    private void startManagement() throws IOException {
+        if (config.managementPort == -1) return;
+        ServerConfig admin = new ServerConfig();
+        admin.port = config.managementPort;
+        admin.bindAddress = config.managementBindAddress;
+        admin.maxConnections = 4;
+        admin.maxRequestsPerConnection = 10;
+        admin.maxBodyBytes = 0;
+        admin.idleTimeoutMillis = 2000;
+        admin.requestTimeoutMillis = 2000;
+        admin.shutdownTimeoutMillis = 0;
+        admin.logRequests = false;
+        admin.handler = request -> {
+            if (!request.method.equals("GET") && !request.method.equals("HEAD")) {
+                return new HttpResponse().status(405, "Method Not Allowed").header("Allow", "GET, HEAD");
+            }
+            return switch (request.path) {
+                case "/healthz" -> HttpResponse.ok("ok\n");
+                case "/readyz" -> running ? HttpResponse.ok("ready\n")
+                        : new HttpResponse().status(503, "Service Unavailable").body("draining\n");
+                case "/metrics" -> HttpResponse.ok(metrics.render(activeConnections()))
+                        .header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+                default -> HttpResponse.notFound();
+            };
+        };
+        management = new Server(admin);
+        Thread.startVirtualThread(() -> {
+            try { management.start(); } catch (IOException e) { LOGGER.error("Management listener failed", e); }
+        });
+        try {
+            if (!management.awaitStarted(Duration.ofSeconds(5))) throw new IOException("Management listener failed to start");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted starting management listener", e);
+        }
+    }
+
     @Override
     public void close() {
         synchronized (lifecycle) {
@@ -133,6 +182,7 @@ public final class Server implements AutoCloseable {
             Thread.currentThread().interrupt();
         } finally {
             if (deadlines != null) deadlines.shutdownNow();
+            if (management != null) management.close();
             LOGGER.info("Server stopped");
         }
     }

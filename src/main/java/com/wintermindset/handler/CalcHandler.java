@@ -86,7 +86,7 @@ public final class CalcHandler implements Handler {
             LOGGER.trace("{} {} {} = {}", x, op, y, result);
             return HttpResponse.ok(Double.toString(result));
         } catch (Exception e) {
-            LOGGER.error(e);
+            LOGGER.debug("Invalid calculator parameters");
             return HttpResponse.badRequest("Invalid parameters");
         }
     }
