@@ -51,6 +51,12 @@ public final class ConfigReader {
                 switch (key) {
                     case "port" -> config.port = Integer.parseInt(value);
                     case "bindAddress" -> config.bindAddress = value;
+                    case "managementPort" -> config.managementPort = Integer.parseInt(value);
+                    case "managementBindAddress" -> config.managementBindAddress = value;
+                    case "logRequests" -> {
+                        if (!value.equals("true") && !value.equals("false")) throw new IllegalArgumentException("Expected true or false for logRequests");
+                        config.logRequests = Boolean.parseBoolean(value);
+                    }
                     case "handler" -> config.handler = HandlerFactory.fromClassName(value);
                     case "maxConnections" -> config.maxConnections = Integer.parseInt(value);
                     case "maxRequestsPerConnection" -> config.maxRequestsPerConnection = Integer.parseInt(value);

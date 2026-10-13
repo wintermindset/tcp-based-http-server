@@ -36,6 +36,9 @@ public final class ServerConfig {
     public Handler handler;
 
     public String bindAddress = "0.0.0.0";
+    public int managementPort = -1;
+    public String managementBindAddress = "127.0.0.1";
+    public boolean logRequests = true;
     public int maxConnections = 64;
     public int maxRequestsPerConnection = 100;
     public int idleTimeoutMillis = 15000;
@@ -48,7 +51,8 @@ public final class ServerConfig {
 
     public void validate() {
         validateLimits();
-        if (port < 0 || port > 65535 || bindAddress == null || bindAddress.isBlank() || handler == null) {
+        if (port < 0 || port > 65535 || bindAddress == null || bindAddress.isBlank() || handler == null
+                || managementPort < -1 || managementPort > 65535 || managementBindAddress == null || managementBindAddress.isBlank()) {
             throw new IllegalArgumentException("Invalid port, bind address, or missing handler");
         }
     }
@@ -57,6 +61,9 @@ public final class ServerConfig {
         ServerConfig copy = new ServerConfig();
         copy.port = port;
         copy.bindAddress = bindAddress;
+        copy.managementPort = managementPort;
+        copy.managementBindAddress = managementBindAddress;
+        copy.logRequests = logRequests;
         copy.handler = handler;
         copy.maxConnections = maxConnections;
         copy.maxRequestsPerConnection = maxRequestsPerConnection;

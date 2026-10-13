@@ -1,6 +1,9 @@
 port: 8080
 handler: com.wintermindset.handler.CalcHandler
 bindAddress: 0.0.0.0
+managementPort: 9090
+managementBindAddress: 127.0.0.1
+logRequests: true
 maxConnections: 64
 maxRequestsPerConnection: 100
 idleTimeoutMillis: 15000

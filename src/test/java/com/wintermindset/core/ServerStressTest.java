@@ -34,6 +34,7 @@ class ServerStressTest {
         assertTrue(seconds > 0 && seconds <= 3600);
         ServerConfig config = new ServerConfig();
         config.port = 0;
+        config.logRequests = false;
         config.maxConnections = Math.max(64, concurrency * 2);
         config.shutdownTimeoutMillis = 500;
         config.handler = new CalcHandler();
