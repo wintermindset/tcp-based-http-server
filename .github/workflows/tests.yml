@@ -6,6 +6,7 @@ on:
   pull_request:
     branches: [main, dev]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -31,6 +32,14 @@ jobs:
           cache: maven
       - run: ./mvnw -B --no-transfer-progress clean verify
       - run: python3 scripts/smoke.py --jar target/tcp-based-http-server-1.0.0.jar
+      - run: python3 scripts/prepare_release.py
+        if: matrix.java == 21
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: matrix.java == 21
+        with:
+          name: release-bundle
+          path: dist/
+          if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

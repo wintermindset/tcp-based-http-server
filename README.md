@@ -122,6 +122,22 @@ container loopback port 9090; do not publish it. The container health check uses
 `/readyz`; override its port if you change `managementPort`.
 
 
+## Releases and updates
+
+Tag the tested `main` commit with the POM version (for example, `1.0.0`). The
+Release workflow repeats CI and creates a draft containing the JAR, runtime
+CycloneDX SBOM, `build-info.json`, license and `SHA256SUMS`. Check the draft before
+publishing it. Subsequent releases use a new version and tag; retain previous
+artifacts and their configuration for rollback.
+
+Before deployment, verify `sha256sum --check SHA256SUMS` and the commit in
+`build-info.json`. To roll back, stop the current process gracefully, restore the
+previous verified JAR and configuration, then check `/readyz` and a calculator
+request. Container deployments should retain the previous image digest.
+
+Dependabot opens weekly Maven, Docker and GitHub Actions updates against `dev`.
+Merge updates after CI, review the SBOM/scan results, and release a new version.
+
 ## License
 
 This project is licensed under the MIT License. See [`LICENSE`](./LICENSE) for details.
