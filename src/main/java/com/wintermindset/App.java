@@ -44,6 +44,7 @@ public class App {
             LOGGER.info("Config is loaded");
             LOGGER.info("Creating server");
             Server server = new Server(config);
+            Runtime.getRuntime().addShutdownHook(new Thread(server::close, "http-shutdown"));
             LOGGER.info("Server is created");
             LOGGER.info("Starting server");
             server.start();

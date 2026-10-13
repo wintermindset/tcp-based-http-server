@@ -40,13 +40,14 @@ public final class ServerConfig {
     public int idleTimeoutMillis = 15000;
     public int readTimeoutMillis = 5000;
     public int requestTimeoutMillis = 30000;
+    public int shutdownTimeoutMillis = 5000;
     public int maxHeaders = 100;
     public int maxHeaderBytes = 32768;
     public int maxBodyBytes = 10 * 1024 * 1024;
 
     public void validateLimits() {
         if (maxConnections <= 0 || maxRequestsPerConnection <= 0 || idleTimeoutMillis <= 0
-                || readTimeoutMillis <= 0 || requestTimeoutMillis <= 0 || maxHeaders <= 0
+                || readTimeoutMillis <= 0 || requestTimeoutMillis <= 0 || shutdownTimeoutMillis < 0 || maxHeaders <= 0
                 || maxHeaderBytes <= 0 || maxBodyBytes < 0 || maxBodyBytes > 10 * 1024 * 1024) {
             throw new IllegalArgumentException("Invalid server resource limits");
         }
