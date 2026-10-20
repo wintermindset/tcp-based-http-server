@@ -1,11 +1,11 @@
-FROM eclipse-temurin:21-jdk@sha256:aab6acf426d88f29f524c27f1521c9a22b110436345ca075a98f2d85351eb777 AS build
+FROM eclipse-temurin:24-jdk@sha256:7493205ffe6caa8074fa8a06a276bb1c5ac41d3dd0fd43a0db66d7f776e80b3e AS build
 WORKDIR /build
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
 COPY src src
 RUN ./mvnw -B --no-transfer-progress package -DskipTests
 
-FROM eclipse-temurin:21-jre@sha256:cff19e6215689161eb6162c11b86b0c60ddf802164f2eaf48d570f8fb79a36c5
+FROM eclipse-temurin:24-jre@sha256:8cb2387a28af84cf0db0948d9c67d4480192f4e567027a3963f145d218e8b4f2
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /build/target/tcp-based-http-server-1.0.0.jar app.jar
 USER 10001:10001
